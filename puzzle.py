@@ -14,6 +14,7 @@ except ImportError:
 Qt = QtCore.Qt
 
 from PaletteWidget import PaletteWidget
+from InfoBoxWidget import InfoBoxWidget
 
 try:
     import nsmblib
@@ -149,108 +150,6 @@ class TilesetClass():
         self.tiles = []
         self.objects = []
         self.unknownFiles = {}
-
-
-
-#############################################################################################
-######################### InfoBox Custom Widget to display info to ##########################
-
-
-class InfoBox(QtWidgets.QWidget):
-    def __init__(self, window):
-        super(InfoBox, self).__init__(window)
-
-        # InfoBox
-        superLayout = QtWidgets.QGridLayout()
-        infoLayout = QtWidgets.QFormLayout()
-
-        self.imageBox = QtWidgets.QGroupBox()
-        imageLayout = QtWidgets.QHBoxLayout()
-
-        pix = QtGui.QPixmap(24, 24)
-        pix.fill(Qt.GlobalColor.transparent)
-
-        self.coreImage = QtWidgets.QLabel()
-        self.coreImage.setPixmap(pix)
-        self.terrainImage = QtWidgets.QLabel()
-        self.terrainImage.setPixmap(pix)
-        self.parameterImage = QtWidgets.QLabel()
-        self.parameterImage.setPixmap(pix)
-
-
-        def updateAllTiles():
-            for i in range(256):
-                window.tileDisplay.update(window.tileDisplay.model().index(i, 0))
-        self.collisionOverlay = QtWidgets.QCheckBox('Overlay Collision')
-        self.collisionOverlay.clicked.connect(updateAllTiles)
-
-
-        self.coreInfo = QtWidgets.QLabel()
-        self.propertyInfo = QtWidgets.QLabel('             \n\n\n\n\n')
-        self.terrainInfo = QtWidgets.QLabel()
-        self.paramInfo = QtWidgets.QLabel()
-
-        Font = self.font()
-        Font.setPointSize(9)
-
-        self.coreInfo.setFont(Font)
-        self.propertyInfo.setFont(Font)
-        self.terrainInfo.setFont(Font)
-        self.paramInfo.setFont(Font)
-
-
-        self.LabelB = QtWidgets.QLabel('Properties:')
-        self.LabelB.setFont(Font)
-
-        self.hexdata = QtWidgets.QLabel('Hex Data: 0x00 0x00 0x00 0x00\n                0x00 0x00 0x00 0x00')
-        self.hexdata.setFont(Font)
-
-
-        coreLayout = QtWidgets.QVBoxLayout()
-        terrLayout = QtWidgets.QVBoxLayout()
-        paramLayout = QtWidgets.QVBoxLayout()
-
-        coreLayout.setGeometry(QtCore.QRect(0,0,40,40))
-        terrLayout.setGeometry(QtCore.QRect(0,0,40,40))
-        paramLayout.setGeometry(QtCore.QRect(0,0,40,40))
-
-
-        label = QtWidgets.QLabel('Core')
-        label.setFont(Font)
-        coreLayout.addWidget(label, 0, Qt.AlignmentFlag.AlignCenter)
-
-        label = QtWidgets.QLabel('Terrain')
-        label.setFont(Font)
-        terrLayout.addWidget(label, 0, Qt.AlignmentFlag.AlignCenter)
-
-        label = QtWidgets.QLabel('Parameters')
-        label.setFont(Font)
-        paramLayout.addWidget(label, 0, Qt.AlignmentFlag.AlignCenter)
-
-        coreLayout.addWidget(self.coreImage, 0, Qt.AlignmentFlag.AlignCenter)
-        terrLayout.addWidget(self.terrainImage, 0, Qt.AlignmentFlag.AlignCenter)
-        paramLayout.addWidget(self.parameterImage, 0, Qt.AlignmentFlag.AlignCenter)
-
-        coreLayout.addWidget(self.coreInfo, 0, Qt.AlignmentFlag.AlignCenter)
-        terrLayout.addWidget(self.terrainInfo, 0, Qt.AlignmentFlag.AlignCenter)
-        paramLayout.addWidget(self.paramInfo, 0, Qt.AlignmentFlag.AlignCenter)
-
-        imageLayout.setContentsMargins(0,4,4,4)
-        imageLayout.addLayout(coreLayout)
-        imageLayout.addLayout(terrLayout)
-        imageLayout.addLayout(paramLayout)
-
-        self.imageBox.setLayout(imageLayout)
-
-
-        superLayout.addWidget(self.imageBox, 0, 0)
-        superLayout.addWidget(self.collisionOverlay, 1, 0)
-        infoLayout.addRow(self.LabelB, self.propertyInfo)
-        infoLayout.addRow(self.hexdata)
-        superLayout.addLayout(infoLayout, 0, 1, 2, 1)
-        self.setLayout(superLayout)
-
-
 
 
 #############################################################################################
@@ -2560,7 +2459,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tileDisplay = displayWidget()
 
         # Info Box for tile information
-        self.infoDisplay = InfoBox(self)
+        self.infoDisplay = InfoBoxWidget(self)
 
         # Sets up the model for the tile pieces
         self.model = PiecesModel(self)
