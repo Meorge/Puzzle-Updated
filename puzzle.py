@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+from ObjectList import ObjectList
+from PuzzleApplication import PuzzleApplication
+from Tileset import TilesetClass
 import archive
 import lz77
 import os, os.path
@@ -15,6 +18,7 @@ Qt = QtCore.Qt
 
 from PaletteWidget import PaletteWidget
 from InfoBoxWidget import InfoBoxWidget
+from DisplayWidget import displayWidget
 
 try:
     import nsmblib
@@ -44,10 +48,6 @@ else: # PySide2
 #
 ########################################################
 
-
-Tileset = None
-
-
 def module_path():
     """
     This will get us the program's directory, even if we are frozen
@@ -74,107 +74,16 @@ def module_path():
     return None
 
 
-#############################################################################################
-########################## Tileset Class and Tile/Object Subclasses #########################
-
-class TilesetClass():
-    '''Contains Tileset data. Inits itself to a blank tileset.
-    Methods: addTile, removeTile, addObject, removeObject, clear'''
-
-    class Tile():
-        def __init__(self, image, noalpha, bytelist):
-            '''Tile Constructor'''
-
-            self.image = image
-            self.noalpha = noalpha
-            self.byte0 = bytelist[0]
-            self.byte1 = bytelist[1]
-            self.byte2 = bytelist[2]
-            self.byte3 = bytelist[3]
-            self.byte4 = bytelist[4]
-            self.byte5 = bytelist[5]
-            self.byte6 = bytelist[6]
-            self.byte7 = bytelist[7]
-
-
-    class Object():
-
-        def __init__(self, height, width, uslope, lslope, tilelist):
-            '''Tile Constructor'''
-
-            self.height = height
-            self.width = width
-
-            self.upperslope = uslope
-            self.lowerslope = lslope
-
-            self.tiles = tilelist
-
-
-    def __init__(self):
-        '''Constructor'''
-
-        self.tiles = []
-        self.objects = []
-        self.unknownFiles = {}
-
-        self.slot = 0
-
-
-    def addTile(self, image, noalpha, bytelist = (0, 0, 0, 0, 0, 0, 0, 0)):
-        '''Adds an tile class to the tile list with the passed image or parameters'''
-
-        self.tiles.append(self.Tile(image, noalpha, bytelist))
-
-
-    def addObject(self, height = 1, width = 1,  uslope = [0, 0], lslope = [0, 0], tilelist = [[(0, 0, 0)]]):
-        '''Adds a new object'''
-
-        global Tileset
-
-        if tilelist == [[(0, 0, 0)]]:
-            tilelist = [[(0, 0, Tileset.slot)]]
-
-        self.objects.append(self.Object(height, width, uslope, lslope, tilelist))
-
-
-    def removeObject(self, index):
-        '''Removes an Object by Index number. Don't use this much, because we want objects to preserve their ID.'''
-
-        self.objects.pop(index)
-
-
-    def clear(self):
-        '''Clears the tileset for a new file'''
-
-        self.tiles = []
-        self.objects = []
-        self.unknownFiles = {}
-
 
 #############################################################################################
 ##################### Object List Widget and Model Setup with Painter #######################
 
 
-class objectList(QtWidgets.QListView):
 
-    def __init__(self, parent=None):
-        super(objectList, self).__init__(parent)
-
-
-        self.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
-        self.setIconSize(QtCore.QSize(96,96))
-        self.setGridSize(QtCore.QSize(114,114))
-        self.setMovement(QtWidgets.QListView.Movement.Static)
-        self.setBackgroundRole(QtGui.QPalette.ColorRole.BrightText)
-        self.setWrapping(False)
-        self.setMinimumHeight(140)
-        self.setMaximumHeight(140)
 
 
 
 def SetupObjectModel(self, objects, tiles):
-    global Tileset
     self.clear()
 
     count = 0
@@ -188,7 +97,7 @@ def SetupObjectModel(self, objects, tiles):
 
         for i in range(len(object.tiles)):
             for tile in object.tiles[i]:
-                if (Tileset.slot == 0) or ((tile[2] & 3) != 0):
+                if (PuzzleApplication.instance().tileset().slot == 0) or ((tile[2] & 3) != 0):
                     painter.drawPixmap(Xoffset, Yoffset, tiles[tile[1]].image)
                 Xoffset += 24
             Xoffset = 0
@@ -201,1425 +110,6 @@ def SetupObjectModel(self, objects, tiles):
         self.appendRow(item)
 
         count += 1
-
-
-#############################################################################################
-######################## List Widget with custom painter/MouseEvent #########################
-
-
-class displayWidget(QtWidgets.QListView):
-
-    mouseMoved = QtCoreSignal(int, int)
-
-    def __init__(self, parent=None):
-        super(displayWidget, self).__init__(parent)
-
-        self.setMinimumWidth(424)
-        self.setMaximumWidth(424)
-        self.setMinimumHeight(404)
-        self.setDragEnabled(True)
-        self.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
-        self.setIconSize(QtCore.QSize(24,24))
-        self.setGridSize(QtCore.QSize(25,25))
-        self.setMovement(QtWidgets.QListView.Movement.Static)
-        self.setAcceptDrops(False)
-        self.setDropIndicatorShown(True)
-        self.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
-        self.setUniformItemSizes(True)
-        self.setBackgroundRole(QtGui.QPalette.ColorRole.BrightText)
-        self.setMouseTracking(True)
-        self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        self.setItemDelegate(self.TileItemDelegate())
-
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
-        QtWidgets.QWidget.mouseMoveEvent(self, event)
-        self.mouseMoved.emit(event.pos().x(), event.pos().y())
-
-
-    class TileItemDelegate(QtWidgets.QAbstractItemDelegate):
-        """Handles tiles and their rendering"""
-
-        def __init__(self):
-            """Initialises the delegate"""
-            QtWidgets.QAbstractItemDelegate.__init__(self)
-
-        def paint(self, painter, option, index):
-            """Paints an object"""
-
-            global Tileset
-            p = index.model().data(index, Qt.ItemDataRole.DecorationRole)
-            painter.drawPixmap(option.rect.x(), option.rect.y(), p.pixmap(24,24))
-
-            x = option.rect.x()
-            y = option.rect.y()
-
-
-            # Collision Overlays
-            info = window.infoDisplay
-            curTile = Tileset.tiles[index.row()]
-
-            if info.collisionOverlay.isChecked():
-                path = os.path.dirname(os.path.abspath(sys.argv[0])) + '/Icons/'
-
-                # Sets the colour based on terrain type
-                if curTile.byte2 & 16:      # Red
-                    colour = QtGui.QColor(255, 0, 0, 120)
-                elif curTile.byte5 == 1:    # Ice
-                    colour = QtGui.QColor(0, 0, 255, 120)
-                elif curTile.byte5 == 2:    # Snow
-                    colour = QtGui.QColor(0, 0, 255, 120)
-                elif curTile.byte5 == 3:    # Quicksand
-                    colour = QtGui.QColor(128,64,0, 120)
-                elif curTile.byte5 == 4:    # Conveyor
-                    colour = QtGui.QColor(128,128,128, 120)
-                elif curTile.byte5 == 5:    # Conveyor
-                    colour = QtGui.QColor(128,128,128, 120)
-                elif curTile.byte5 == 6:    # Rope
-                    colour = QtGui.QColor(128,0,255, 120)
-                elif curTile.byte5 == 7:    # Half Spike
-                    colour = QtGui.QColor(128,0,255, 120)
-                elif curTile.byte5 == 8:    # Ledge
-                    colour = QtGui.QColor(128,0,255, 120)
-                elif curTile.byte5 == 9:    # Ladder
-                    colour = QtGui.QColor(128,0,255, 120)
-                elif curTile.byte5 == 10:    # Staircase
-                    colour = QtGui.QColor(255, 0, 0, 120)
-                elif curTile.byte5 == 11:    # Carpet
-                    colour = QtGui.QColor(255, 0, 0, 120)
-                elif curTile.byte5 == 12:    # Dust
-                    colour = QtGui.QColor(128,64,0, 120)
-                elif curTile.byte5 == 13:    # Grass
-                    colour = QtGui.QColor(0, 255, 0, 120)
-                elif curTile.byte5 == 14:    # Unknown
-                    colour = QtGui.QColor(255, 0, 0, 120)
-                elif curTile.byte5 == 15:    # Beach Sand
-                    colour = QtGui.QColor(128, 64, 0, 120)
-                else:                       # Brown?
-                    colour = QtGui.QColor(64, 30, 0, 120)
-
-
-                # Sets Brush style for fills
-                if curTile.byte2 & 4:        # Climbing Grid
-                    style = Qt.BrushStyle.DiagCrossPattern
-                elif curTile.byte3 & 16:     # Breakable
-                    style = Qt.BrushStyle.VerPattern
-                else:
-                    style = Qt.BrushStyle.SolidPattern
-
-
-                brush = QtGui.QBrush(colour, style)
-                painter.setBrush(brush)
-                painter.setRenderHint(QtGui.QPainter.Antialiasing)
-
-
-                # Paints shape based on other junk
-                if curTile.byte3 & 32: # Slope
-                    if curTile.byte7 == 0:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y)]))
-                    elif curTile.byte7 == 1:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 2:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 12)]))
-                    elif curTile.byte7 == 3:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 24)]))
-                    elif curTile.byte7 == 4:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 24)]))
-                    elif curTile.byte7 == 5:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 10:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y)]))
-                    elif curTile.byte7 == 11:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 18),
-                                                            QtCore.QPoint(x + 24, y + 24)]))
-                    elif curTile.byte7 == 12:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x, y + 18),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 13:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 6),
-                                                            QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 14:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x, y + 6),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 15:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 6),
-                                                            QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 16:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x, y + 6),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 17:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 18),
-                                                            QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 18:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x, y + 18),
-                                                            QtCore.QPoint(x, y + 24)]))
-
-                elif curTile.byte3 & 64: # Reverse Slope
-                    if curTile.byte7 == 0:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y)]))
-                    elif curTile.byte7 == 1:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y)]))
-                    elif curTile.byte7 == 2:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y + 12)]))
-                    elif curTile.byte7 == 3:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y)]))
-                    elif curTile.byte7 == 4:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12)]))
-                    elif curTile.byte7 == 5:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y)]))
-                    elif curTile.byte7 == 10:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y)]))
-                    elif curTile.byte7 == 11:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 6)]))
-                    elif curTile.byte7 == 12:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x, y + 6)]))
-                    elif curTile.byte7 == 13:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 18),
-                                                            QtCore.QPoint(x, y + 12)]))
-                    elif curTile.byte7 == 14:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x, y + 18)]))
-                    elif curTile.byte7 == 15:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 18),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 16:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x, y + 18)]))
-                    elif curTile.byte7 == 17:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 6),
-                                                            QtCore.QPoint(x, y + 12)]))
-                    elif curTile.byte7 == 18:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x, y + 6)]))
-
-                elif curTile.byte2 & 8: # Partial
-                    if curTile.byte7 == 1:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 12, y + 12),
-                                                            QtCore.QPoint(x, y + 12)]))
-                    elif curTile.byte7 == 2:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x + 12, y + 12)]))
-                    elif curTile.byte7 == 3:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x, y + 12)]))
-                    elif curTile.byte7 == 4:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x + 12, y + 12),
-                                                            QtCore.QPoint(x + 12, y + 24),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 5:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 12, y + 24),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 6:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 12, y + 24),
-                                                            QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x, y + 12)]))
-                    elif curTile.byte7 == 7:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x + 12, y + 12),
-                                                            QtCore.QPoint(x + 12, y + 24),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 8:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 12, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 12, y + 24)]))
-                    elif curTile.byte7 == 9:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 12, y + 24),
-                                                            QtCore.QPoint(x + 12, y)]))
-                    elif curTile.byte7 == 10:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 12, y + 24)]))
-                    elif curTile.byte7 == 11:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 12, y + 24),
-                                                            QtCore.QPoint(x + 12, y + 12),
-                                                            QtCore.QPoint(x, y + 12)]))
-                    elif curTile.byte7 == 12:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 13:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 12, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 14:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 12, y + 12),
-                                                            QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x, y + 24)]))
-                    elif curTile.byte7 == 15:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x, y + 24)]))
-
-                elif curTile.byte2 & 0x40: # Solid-on-bottom
-                    painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                        QtCore.QPoint(x + 24, y + 24),
-                                                        QtCore.QPoint(x + 24, y + 18),
-                                                        QtCore.QPoint(x, y + 18)]))
-
-                    painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 15, y),
-                                                        QtCore.QPoint(x + 15, y + 12),
-                                                        QtCore.QPoint(x + 18, y + 12),
-                                                        QtCore.QPoint(x + 12, y + 17),
-                                                        QtCore.QPoint(x + 6, y + 12),
-                                                        QtCore.QPoint(x + 9, y + 12),
-                                                        QtCore.QPoint(x + 9, y)]))
-
-                elif curTile.byte2 & 0x80: # Solid-on-top
-                    painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                        QtCore.QPoint(x + 24, y),
-                                                        QtCore.QPoint(x + 24, y + 6),
-                                                        QtCore.QPoint(x, y + 6)]))
-
-                    painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 15, y + 24),
-                                                        QtCore.QPoint(x + 15, y + 12),
-                                                        QtCore.QPoint(x + 18, y + 12),
-                                                        QtCore.QPoint(x + 12, y + 7),
-                                                        QtCore.QPoint(x + 6, y + 12),
-                                                        QtCore.QPoint(x + 9, y + 12),
-                                                        QtCore.QPoint(x + 9, y + 24)]))
-
-                elif curTile.byte2 & 16: # Spikes
-                    if curTile.byte7 == 0:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x, y + 6)]))
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 24, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x, y + 18)]))
-                    if curTile.byte7 == 1:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x + 24, y + 6)]))
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 12),
-                                                            QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 18)]))
-                    if curTile.byte7 == 2:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y + 24),
-                                                            QtCore.QPoint(x + 12, y + 24),
-                                                            QtCore.QPoint(x + 6, y)]))
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 12, y + 24),
-                                                            QtCore.QPoint(x + 24, y + 24),
-                                                            QtCore.QPoint(x + 18, y)]))
-                    if curTile.byte7 == 3:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 6, y + 24)]))
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 12, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 18, y + 24)]))
-                    if curTile.byte7 == 4:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 18, y + 24),
-                                                            QtCore.QPoint(x + 6, y + 24)]))
-                    if curTile.byte7 == 5:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x + 6, y),
-                                                            QtCore.QPoint(x + 18, y),
-                                                            QtCore.QPoint(x + 12, y + 24)]))
-                    if curTile.byte7 == 6:
-                        painter.drawPolygon(QtGui.QPolygon([QtCore.QPoint(x, y),
-                                                            QtCore.QPoint(x + 24, y),
-                                                            QtCore.QPoint(x + 12, y + 24)]))
-
-                elif curTile.byte3 & 2: # Coin
-                    if curTile.byte7 == 0:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'Coin/Coin.png'))
-                    if curTile.byte7 == 4:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'Coin/POW.png'))
-
-                elif curTile.byte3 & 8: # Exploder
-                    if curTile.byte7 == 1:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'Explode/Stone.png'))
-                    if curTile.byte7 == 2:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'Explode/Wood.png'))
-                    if curTile.byte7 == 3:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'Explode/Red.png'))
-
-                elif curTile.byte1 & 2: # Falling
-                    painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'Prop/Fall.png'))
-
-                elif curTile.byte3 & 4: # QBlock
-                    if curTile.byte7 == 0:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/FireF.png'))
-                    if curTile.byte7 == 1:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/Star.png'))
-                    if curTile.byte7 == 2:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/Coin.png'))
-                    if curTile.byte7 == 3:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/Vine.png'))
-                    if curTile.byte7 == 4:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/1up.png'))
-                    if curTile.byte7 == 5:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/Mini.png'))
-                    if curTile.byte7 == 6:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/Prop.png'))
-                    if curTile.byte7 == 7:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/Peng.png'))
-                    if curTile.byte7 == 8:
-                        painter.drawPixmap(option.rect, QtGui.QPixmap(path + 'QBlock/IceF.png'))
-
-                elif curTile.byte3 & 1: # Solid
-                    painter.drawRect(option.rect)
-
-                else: # No fill
-                    pass
-
-
-            # Highlight stuff.
-            colour = option.palette.highlight().color()
-            colour.setAlpha(80)
-
-            if option.state & QtWidgets.QStyle.StateFlag.State_Selected:
-                painter.fillRect(option.rect, colour)
-
-
-        def sizeHint(self, option, index):
-            """Returns the size for the object"""
-            return QtCore.QSize(24,24)
-
-
-
-#############################################################################################
-############################ Tile widget for drag n'drop Objects ############################
-
-
-class tileOverlord(QtWidgets.QWidget):
-
-    def __init__(self):
-        super(tileOverlord, self).__init__()
-
-        # Setup Widgets
-        self.tiles = tileWidget()
-
-        self.addObject = QtWidgets.QPushButton('Add')
-        self.removeObject = QtWidgets.QPushButton('Remove')
-
-        self.addRow = QtWidgets.QPushButton('+')
-        self.removeRow = QtWidgets.QPushButton('-')
-
-        self.addColumn = QtWidgets.QPushButton('+')
-        self.removeColumn = QtWidgets.QPushButton('-')
-
-        self.tilingMethod = QtWidgets.QComboBox()
-        self.tilesetType = QtWidgets.QLabel('Pa0')
-
-        self.tilingMethod.addItems(['Repeat',
-                                    'Stretch Center',
-                                    'Stretch X',
-                                    'Stretch Y',
-                                    'Repeat Bottom',
-                                    'Repeat Top',
-                                    'Repeat Left',
-                                    'Repeat Right',
-                                    'Upward slope',
-                                    'Downward slope',
-                                    'Downward reverse slope',
-                                    'Upward reverse slope'])
-
-
-        # Connections
-        self.addObject.released.connect(self.addObj)
-        self.removeObject.released.connect(self.removeObj)
-        self.addRow.released.connect(self.tiles.addRow)
-        self.removeRow.released.connect(self.tiles.removeRow)
-        self.addColumn.released.connect(self.tiles.addColumn)
-        self.removeColumn.released.connect(self.tiles.removeColumn)
-
-        self.tilingMethod.activated.connect(self.setTiling)
-
-
-        # Layout
-        layout = QtWidgets.QGridLayout()
-
-        layout.addWidget(self.tilesetType, 0, 0, 1, 3)
-        layout.addWidget(self.tilingMethod, 0, 3, 1, 3)
-
-        layout.addWidget(self.addObject, 0, 6, 1, 1)
-        layout.addWidget(self.removeObject, 0, 7, 1, 1)
-
-        layout.setRowMinimumHeight(1, 40)
-
-        layout.setRowStretch(1, 1)
-        layout.setRowStretch(2, 5)
-        layout.setRowStretch(5, 5)
-        layout.addWidget(self.tiles, 2, 1, 4, 6)
-
-        layout.addWidget(self.addColumn, 3, 7, 1, 1)
-        layout.addWidget(self.removeColumn, 4, 7, 1, 1)
-        layout.addWidget(self.addRow, 6, 3, 1, 1)
-        layout.addWidget(self.removeRow, 6, 4, 1, 1)
-
-        self.setLayout(layout)
-
-
-
-
-    def addObj(self):
-        global Tileset
-
-        Tileset.addObject()
-
-        pix = QtGui.QPixmap(24, 24)
-        pix.fill(Qt.GlobalColor.transparent)
-        painter = QtGui.QPainter(pix)
-        painter.drawPixmap(0, 0, Tileset.tiles[0].image)
-        painter.end()
-
-        count = len(Tileset.objects)
-        window.objmodel.appendRow(QtGui.QStandardItem(QtGui.QIcon(pix), 'Object {0}'.format(count-1)))
-        index = window.objectList.currentIndex()
-        window.objectList.setCurrentIndex(index)
-        self.setObject(index)
-
-        window.objectList.update()
-        self.update()
-
-
-    def removeObj(self):
-        global Tileset
-
-        if not Tileset.objects:
-            return
-
-        index = window.objectList.currentIndex()
-
-        if index.row() == -1:
-            return
-
-        Tileset.removeObject(index.row())
-        window.objmodel.removeRow(index.row())
-
-        index = window.objectList.currentIndex()
-        if index.row() == -1:
-            self.tiles.clear()
-        else:
-            window.objectList.setCurrentIndex(index)
-            self.setObject(index)
-
-        window.objectList.update()
-        self.update()
-
-
-    def setObject(self, index):
-        global Tileset
-        object = Tileset.objects[index.row()]
-
-        width = len(object.tiles[0])-1
-        height = len(object.tiles)-1
-        Xuniform = True
-        Yuniform = True
-        Xstretch = False
-        Ystretch = False
-
-        for tile in object.tiles[0]:
-            if tile[0] != object.tiles[0][0][0]:
-                Xuniform = False
-
-        for tile in object.tiles:
-            if tile[0][0] != object.tiles[0][0][0]:
-                Yuniform = False
-
-        if object.tiles[0][0][0] == object.tiles[0][width][0] and Xuniform == False:
-            Xstretch = True
-
-        if object.tiles[0][0][0] == object.tiles[height][0][0] and Xuniform == False:
-            Ystretch = True
-
-
-
-        if object.upperslope[0] != 0:
-            if object.upperslope[0] == 0x90:
-                self.tilingMethod.setCurrentIndex(8)
-            elif object.upperslope[0] == 0x91:
-                self.tilingMethod.setCurrentIndex(9)
-            elif object.upperslope[0] == 0x92:
-                self.tilingMethod.setCurrentIndex(10)
-            elif object.upperslope[0] == 0x93:
-                self.tilingMethod.setCurrentIndex(11)
-
-        else:
-            if Xuniform and Yuniform:
-                self.tilingMethod.setCurrentIndex(0)
-            elif Xstretch and Ystretch:
-                self.tilingMethod.setCurrentIndex(1)
-            elif Xstretch:
-                self.tilingMethod.setCurrentIndex(2)
-            elif Ystretch:
-                self.tilingMethod.setCurrentIndex(3)
-            elif Xuniform and Yuniform == False and object.tiles[0][0][0] == 0:
-                self.tilingMethod.setCurrentIndex(4)
-            elif Xuniform and Yuniform == False and object.tiles[height][0][0] == 0:
-                self.tilingMethod.setCurrentIndex(5)
-            elif Xuniform == False and Yuniform and object.tiles[0][0][0] == 0:
-                self.tilingMethod.setCurrentIndex(6)
-            elif Xuniform == False and Yuniform and object.tiles[0][width][0] == 0:
-                self.tilingMethod.setCurrentIndex(7)
-
-
-        self.tiles.setObject(object)
-
-#        print 'Object {0}, Width: {1} / Height: {2}, Slope {3}/{4}'.format(index.row(), object.width, object.height, object.upperslope, object.lowerslope)
-#        for row in object.tiles:
-#            print 'Row: {0}'.format(row)
-#        print ''
-
-    @QtCoreSlot(int)
-    def setTiling(self, listindex):
-        global Tileset
-
-        index = window.objectList.currentIndex()
-        object = Tileset.objects[index.row()]
-
-
-        if listindex == 0: # Repeat
-            ctile = 0
-            crow = 0
-
-            for row in object.tiles:
-                for tile in row:
-                    object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0, 0]
-            object.lowerslope = [0, 0]
-            self.tiles.slope = 0
-            self.tiles.update()
-
-        if listindex == 1: # Stretch Center
-
-            if object.width < 3 and object.height < 3:
-                reply = QtWidgets.QMessageBox.information(self, "Warning", "An object must be at least 3 tiles\nwide and 3 tiles tall to apply stretch center.")
-                self.setObject(index)
-                return
-
-            ctile = 0
-            crow = 0
-
-            for row in object.tiles:
-                for tile in row:
-                    if crow == 0 and ctile == 0:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    elif crow == 0 and ctile == object.width-1:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    elif crow == object.height-1 and ctile == object.width-1:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    elif crow == object.height-1 and ctile == 0:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    elif crow == 0 or crow == object.height-1:
-                        object.tiles[crow][ctile] = (1, tile[1], tile[2])
-                    elif ctile == 0 or ctile == object.width-1:
-                        object.tiles[crow][ctile] = (2, tile[1], tile[2])
-                    else:
-                        object.tiles[crow][ctile] = (3, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0, 0]
-            object.lowerslope = [0, 0]
-            self.tiles.slope = 0
-            self.tiles.update()
-
-        if listindex == 2: # Stretch X
-
-            if object.width < 3:
-                reply = QtWidgets.QMessageBox.information(self, "Warning", "An object must be at least 3 tiles\nwide to apply stretch X.")
-                self.setObject(index)
-                return
-
-            ctile = 0
-            crow = 0
-
-            for row in object.tiles:
-                for tile in row:
-                    if ctile == 0:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    elif ctile == object.width-1:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    else:
-                        object.tiles[crow][ctile] = (1, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0, 0]
-            object.lowerslope = [0, 0]
-            self.tiles.slope = 0
-            self.tiles.update()
-
-        if listindex == 3: # Stretch Y
-
-            if object.height < 3:
-                reply = QtWidgets.QMessageBox.information(self, "Warning", "An object must be at least 3 tiles\ntall to apply stretch Y.")
-                self.setObject(index)
-                return
-
-            ctile = 0
-            crow = 0
-
-            for row in object.tiles:
-                for tile in row:
-                    if crow == 0:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    elif crow == object.height-1:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    else:
-                        object.tiles[crow][ctile] = (2, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0, 0]
-            object.lowerslope = [0, 0]
-            self.tiles.slope = 0
-            self.tiles.update()
-
-        if listindex == 4: # Repeat Bottom
-
-            if object.height < 2:
-                reply = QtWidgets.QMessageBox.information(self, "Warning", "An object must be at least 2 tiles\ntall to apply repeat bottom.")
-                self.setObject(index)
-                return
-
-            ctile = 0
-            crow = 0
-
-            for row in object.tiles:
-                for tile in row:
-                    if crow == object.height-1:
-                        object.tiles[crow][ctile] = (2, tile[1], tile[2])
-                    else:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0, 0]
-            object.lowerslope = [0, 0]
-            self.tiles.slope = 0
-            self.tiles.update()
-
-        if listindex == 5: # Repeat Top
-
-            if object.height < 2:
-                reply = QtWidgets.QMessageBox.information(self, "Warning", "An object must be at least 2 tiles\ntall to apply repeat top.")
-                self.setObject(index)
-                return
-
-            ctile = 0
-            crow = 0
-
-            for row in object.tiles:
-                for tile in row:
-                    if crow == 0:
-                        object.tiles[crow][ctile] = (2, tile[1], tile[2])
-                    else:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0, 0]
-            object.lowerslope = [0, 0]
-            self.tiles.slope = 0
-            self.tiles.update()
-
-        if listindex == 6: # Repeat Left
-
-            if object.width < 2:
-                reply = QtWidgets.QMessageBox.information(self, "Warning", "An object must be at least 2 tiles\nwide to apply repeat left.")
-                self.setObject(index)
-                return
-
-            ctile = 0
-            crow = 0
-
-            for row in object.tiles:
-                for tile in row:
-                    if ctile == 0:
-                        object.tiles[crow][ctile] = (1, tile[1], tile[2])
-                    else:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0, 0]
-            object.lowerslope = [0, 0]
-            self.tiles.slope = 0
-            self.tiles.update()
-
-        if listindex == 7: # Repeat Right
-
-            if object.width < 2:
-                reply = QtWidgets.QMessageBox.information(self, "Warning", "An object must be at least 2 tiles\nwide to apply repeat right.")
-                self.setObject(index)
-                return
-
-            ctile = 0
-            crow = 0
-
-            for row in object.tiles:
-                for tile in row:
-                    if ctile == object.width-1:
-                        object.tiles[crow][ctile] = (1, tile[1], tile[2])
-                    else:
-                        object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0, 0]
-            object.lowerslope = [0, 0]
-            self.tiles.slope = 0
-            self.tiles.update()
-
-
-        if listindex == 8: # Upward Slope
-            ctile = 0
-            crow = 0
-            for row in object.tiles:
-                for tile in row:
-                    object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0x90, 1]
-            object.lowerslope = [0x84, object.height - 1]
-            self.tiles.slope = 1
-            self.tiles.update()
-
-        if listindex == 9: # Downward Slope
-            ctile = 0
-            crow = 0
-            for row in object.tiles:
-                for tile in row:
-                    object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0x91, 1]
-            object.lowerslope = [0x84, object.height - 1]
-            self.tiles.slope = 1
-            self.tiles.update()
-
-        if listindex == 10: # Upward Reverse Slope
-            ctile = 0
-            crow = 0
-            for row in object.tiles:
-                for tile in row:
-                    object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0x92, object.height - 1]
-            object.lowerslope = [0x84, 1]
-            self.tiles.slope = 0-(object.height-1)
-            self.tiles.update()
-
-        if listindex == 11: # Downward Reverse Slope
-            ctile = 0
-            crow = 0
-            for row in object.tiles:
-                for tile in row:
-                    object.tiles[crow][ctile] = (0, tile[1], tile[2])
-                    ctile += 1
-                crow += 1
-                ctile = 0
-
-            object.upperslope = [0x93, object.height - 1]
-            object.lowerslope = [0x84, 1]
-            self.tiles.slope = 0-(object.height-1)
-            self.tiles.update()
-
-
-class tileWidget(QtWidgets.QWidget):
-
-    def __init__(self):
-        super(tileWidget, self).__init__()
-
-        self.tiles = []
-
-        self.size = [1, 1]
-        self.setMinimumSize(24, 24)
-
-        self.slope = 0
-
-        self.highlightedRect = QtCore.QRect()
-
-        self.setAcceptDrops(True)
-        self.object = 0
-
-
-    def clear(self):
-        self.tiles = []
-        self.size = [1, 1] # [width, height]
-
-        self.slope = 0
-        self.highlightedRect = QtCore.QRect()
-
-        self.update()
-
-
-    def addColumn(self):
-        global Tileset
-
-        if self.object >= len(Tileset.objects):
-            return
-
-        if self.size[0] >= 24:
-            return
-
-        self.size[0] += 1
-        self.setMinimumSize(self.size[0]*24, self.size[1]*24)
-
-        pix = QtGui.QPixmap(24,24)
-        pix.fill(QtGui.QColor(0,0,0,0))
-
-        for y in range(self.size[1]):
-            self.tiles.insert(((y+1) * self.size[0]) -1, [self.size[0]-1, y, pix])
-
-
-        curObj = Tileset.objects[self.object]
-        curObj.width += 1
-
-        for row in curObj.tiles:
-            row.append((0, 0, 0))
-
-        self.update()
-        self.updateList()
-
-
-    def removeColumn(self):
-        global Tileset
-
-        if self.size[0] == 1:
-            return
-
-        for y in range(self.size[1]):
-            self.tiles.pop(((y+1) * self.size[0])-(y+1))
-
-        self.size[0] = self.size[0] - 1
-        self.setMinimumSize(self.size[0]*24, self.size[1]*24)
-
-
-        curObj = Tileset.objects[self.object]
-        curObj.width -= 1
-
-        for row in curObj.tiles:
-            row.pop()
-
-        self.update()
-        self.updateList()
-
-
-    def addRow(self):
-        global Tileset
-
-        if self.object >= len(Tileset.objects):
-            return
-
-        if self.size[1] >= 24:
-            return
-
-        self.size[1] += 1
-        self.setMinimumSize(self.size[0]*24, self.size[1]*24)
-
-        pix = QtGui.QPixmap(24,24)
-        pix.fill(QtGui.QColor(0,0,0,0))
-
-        for x in range(self.size[0]):
-            self.tiles.append([x, self.size[1]-1, pix])
-
-        curObj = Tileset.objects[self.object]
-        curObj.height += 1
-
-        curObj.tiles.append([])
-        for i in range(0, curObj.width):
-            curObj.tiles[len(curObj.tiles)-1].append((0, 0, 0))
-
-        self.update()
-        self.updateList()
-
-
-    def removeRow(self):
-        global Tileset
-
-        if self.size[1] == 1:
-            return
-
-        for x in range(self.size[0]):
-            self.tiles.pop()
-
-        self.size[1] -= 1
-        self.setMinimumSize(self.size[0]*24, self.size[1]*24)
-
-        curObj = Tileset.objects[self.object]
-        curObj.height -= 1
-
-        curObj.tiles.pop()
-
-        self.update()
-        self.updateList()
-
-
-    def setObject(self, object):
-        self.clear()
-
-        global Tileset
-
-        self.size = [object.width, object.height]
-
-        if not object.upperslope[1] == 0:
-            if object.upperslope[0] & 2:
-                self.slope = 0 - object.lowerslope[1]
-            else:
-                self.slope = object.upperslope[1]
-
-        x = 0
-        y = 0
-        for row in object.tiles:
-            for tile in row:
-                if (Tileset.slot == 0) or ((tile[2] & 3) != 0):
-                    self.tiles.append([x, y, Tileset.tiles[tile[1]].image])
-                else:
-                    pix = QtGui.QPixmap(24,24)
-                    pix.fill(QtGui.QColor(0,0,0,0))
-                    self.tiles.append([x, y, pix])
-                x += 1
-            y += 1
-            x = 0
-
-
-        self.object = window.objectList.currentIndex().row()
-        self.update()
-        self.updateList()
-
-
-    def contextMenuEvent(self, event):
-
-        TileMenu = QtWidgets.QMenu(self)
-        self.contX = event.x()
-        self.contY = event.y()
-
-        TileMenu.addAction('Set tile...', self.setTile)
-        TileMenu.addAction('Set item...', self.setItem)
-
-        TileMenu.exec_(event.globalPos())
-
-
-    def mousePressEvent(self, event):
-        global Tileset
-
-        if event.button() == 2:
-            return
-
-        if window.tileDisplay.selectedIndexes() == []:
-            return
-
-        currentSelected = window.tileDisplay.selectedIndexes()
-
-        ix = 0
-        iy = 0
-        for modelItem in currentSelected:
-            # Update yourself!
-            centerPoint = self.contentsRect().center()
-
-            tile = modelItem.row()
-            upperLeftX = centerPoint.x() - self.size[0]*12
-            upperLeftY = centerPoint.y() - self.size[1]*12
-
-            lowerRightX = centerPoint.x() + self.size[0]*12
-            lowerRightY = centerPoint.y() + self.size[1]*12
-
-
-            x = int((event.x() - upperLeftX)/24 + ix)
-            y = int((event.y() - upperLeftY)/24 + iy)
-
-            if event.x() < upperLeftX or event.y() < upperLeftY or event.x() > lowerRightX or event.y() > lowerRightY:
-                return
-
-            try:
-                self.tiles[(y * self.size[0]) + x][2] = Tileset.tiles[tile].image
-                Tileset.objects[self.object].tiles[y][x] = (Tileset.objects[self.object].tiles[y][x][0], tile, Tileset.slot)
-            except IndexError:
-                pass
-
-            ix += 1
-            if self.size[0]-1 < ix:
-                ix = 0
-                iy += 1
-            if iy > self.size[1]-1:
-                break
-
-
-        self.update()
-
-        self.updateList()
-
-
-    def updateList(self):
-        # Update the list >.>
-        object = window.objmodel.itemFromIndex(window.objectList.currentIndex())
-        if not object: return
-
-
-        tex = QtGui.QPixmap(self.size[0] * 24, self.size[1] * 24)
-        tex.fill(Qt.GlobalColor.transparent)
-        painter = QtGui.QPainter(tex)
-
-        Xoffset = 0
-        Yoffset = 0
-
-        for tile in self.tiles:
-            painter.drawPixmap(tile[0]*24, tile[1]*24, tile[2])
-
-        painter.end()
-
-        object.setIcon(QtGui.QIcon(tex))
-
-        window.objectList.update()
-
-
-
-    def setTile(self):
-        global Tileset
-
-        dlg = self.setTileDialog()
-        if dlg.exec_() == QtWidgets.QDialog.Accepted:
-            # Do stuff
-            centerPoint = self.contentsRect().center()
-
-            upperLeftX = centerPoint.x() - self.size[0]*12
-            upperLeftY = centerPoint.y() - self.size[1]*12
-
-            tile = dlg.tile.value()
-            tileset = dlg.tileset.currentIndex()
-
-            x = int((self.contX - upperLeftX) / 24)
-            y = int((self.contY - upperLeftY) / 24)
-
-            if tileset != Tileset.slot:
-                tex = QtGui.QPixmap(self.size[0] * 24, self.size[1] * 24)
-                tex.fill(Qt.GlobalColor.transparent)
-
-                self.tiles[(y * self.size[0]) + x][2] = tex
-
-            Tileset.objects[self.object].tiles[y][x] = (Tileset.objects[self.object].tiles[y][x][0], tile, tileset)
-
-            self.update()
-            self.updateList()
-
-
-    class setTileDialog(QtWidgets.QDialog):
-
-        def __init__(self):
-            QtWidgets.QDialog.__init__(self)
-
-            self.setWindowTitle('Set tiles')
-
-            self.tileset = QtWidgets.QComboBox()
-            self.tileset.addItems(['Pa0', 'Pa1', 'Pa2', 'Pa3'])
-
-            self.tile = QtWidgets.QSpinBox()
-            self.tile.setRange(0, 255)
-
-            self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
-            self.buttons.accepted.connect(self.accept)
-            self.buttons.rejected.connect(self.reject)
-
-            self.layout = QtWidgets.QGridLayout()
-            self.layout.addWidget(QtWidgets.QLabel('Tileset:'), 0,0,1,1, Qt.AlignmentFlag.AlignLeft)
-            self.layout.addWidget(QtWidgets.QLabel('Tile:'), 0,3,1,1, Qt.AlignmentFlag.AlignLeft)
-            self.layout.addWidget(self.tileset, 1, 0, 1, 2)
-            self.layout.addWidget(self.tile, 1, 3, 1, 3)
-            self.layout.addWidget(self.buttons, 2, 3)
-            self.setLayout(self.layout)
-
-
-    def setItem(self):
-        global Tileset
-
-        centerPoint = self.contentsRect().center()
-
-        upperLeftX = centerPoint.x() - self.size[0]*12
-        upperLeftY = centerPoint.y() - self.size[1]*12
-
-        x = int((self.contX - upperLeftX) / 24)
-        y = int((self.contY - upperLeftY) / 24)
-
-        obj = Tileset.objects[self.object].tiles[y][x]
-
-        dlg = self.setItemDialog(obj[2] >> 2)
-        if dlg.exec_() == QtWidgets.QDialog.Accepted:
-            # Do stuff
-            item = dlg.item.currentIndex()
-
-            Tileset.objects[self.object].tiles[y][x] = (obj[0], obj[1], (obj[2] & 3) | (item << 2))
-
-            self.update()
-            self.updateList()
-
-
-    class setItemDialog(QtWidgets.QDialog):
-
-        def __init__(self, initialIndex=0):
-            QtWidgets.QDialog.__init__(self)
-
-            self.setWindowTitle('Set item')
-
-            self.item = QtWidgets.QComboBox()
-            self.item.addItems([
-                'Item specified in tile behavior',
-                'Fire Flower',
-                'Star',
-                'Coin',
-                'Vine',
-                'Spring',
-                'Mini Mushroom',
-                'Propeller Mushroom',
-                'Penguin Suit',
-                'Yoshi',
-                'Ice Flower',
-                'Unknown (11)',
-                'Unknown (12)',
-                'Unknown (13)',
-                'Unknown (14)'])
-            self.item.setCurrentIndex(initialIndex)
-
-            self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
-            self.buttons.accepted.connect(self.accept)
-            self.buttons.rejected.connect(self.reject)
-
-            self.layout = QtWidgets.QHBoxLayout()
-            self.vlayout = QtWidgets.QVBoxLayout()
-            self.layout.addWidget(QtWidgets.QLabel('Item:'))
-            self.layout.addWidget(self.item)
-            self.vlayout.addLayout(self.layout)
-            self.vlayout.addWidget(self.buttons)
-            self.setLayout(self.vlayout)
-
-
-
-    def paintEvent(self, event):
-        painter = QtGui.QPainter()
-        painter.begin(self)
-
-        centerPoint = self.contentsRect().center()
-        upperLeftX = centerPoint.x() - self.size[0]*12
-        lowerRightX = centerPoint.x() + self.size[0]*12
-
-        upperLeftY = centerPoint.y() - self.size[1]*12
-        lowerRightY = centerPoint.y() + self.size[1]*12
-
-
-        painter.fillRect(upperLeftX, upperLeftY, self.size[0] * 24, self.size[1]*24, QtGui.QColor(205, 205, 255))
-
-        for x, y, pix in self.tiles:
-            painter.drawPixmap(upperLeftX + (x * 24), upperLeftY + (y * 24), pix)
-
-        if not self.slope == 0:
-            pen = QtGui.QPen()
-#            pen.setStyle(Qt.QDashLine)
-            pen.setWidth(1)
-            pen.setColor(Qt.GlobalColor.blue)
-            painter.setPen(QtGui.QPen(pen))
-            painter.drawLine(upperLeftX, upperLeftY + (abs(self.slope) * 24), lowerRightX, upperLeftY + (abs(self.slope) * 24))
-
-            if self.slope > 0:
-                main = 'Main'
-                sub = 'Sub'
-            elif self.slope < 0:
-                main = 'Sub'
-                sub = 'Main'
-
-            font = painter.font()
-            font.setPixelSize(8)
-            font.setFamily('Monaco')
-            painter.setFont(font)
-
-            painter.drawText(upperLeftX+1, upperLeftY+10, main)
-            painter.drawText(upperLeftX+1, upperLeftY + (abs(self.slope) * 24) + 9, sub)
-
-        painter.end()
-
-
-
-#############################################################################################
-############################ Subclassed one dimension Item Model ############################
-
-
-class PiecesModel(QtCore.QAbstractListModel):
-    def __init__(self, parent=None):
-        super(PiecesModel, self).__init__(parent)
-
-        self.pixmaps = []
-
-    def supportedDragActions(self):
-        super().supportedDragActions()
-        return Qt.DropAction.CopyAction | Qt.DropAction.MoveAction | Qt.DropAction.LinkAction
-
-    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        if not index.isValid():
-            return None
-
-        if role == Qt.ItemDataRole.DecorationRole:
-            return QtGui.QIcon(self.pixmaps[index.row()])
-
-        if role == Qt.ItemDataRole.UserRole:
-            return self.pixmaps[index.row()]
-
-        return None
-
-    def addPieces(self, pixmap):
-        row = len(self.pixmaps)
-
-        self.beginInsertRows(QtCore.QModelIndex(), row, row)
-        self.pixmaps.insert(row, pixmap)
-        self.endInsertRows()
-
-    def flags(self,index):
-        if index.isValid():
-            return (Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable |
-                    Qt.ItemFlag.ItemIsDragEnabled)
-
-    def clear(self):
-        row = len(self.pixmaps)
-
-        del self.pixmaps[:]
-
-
-    def mimeTypes(self):
-        return ['image/x-tile-piece']
-
-
-    def mimeData(self, indexes):
-        mimeData = QtCore.QMimeData()
-        encodedData = QtCore.QByteArray()
-
-        stream = QtCore.QDataStream(encodedData, QtCore.QIODevice.WriteOnly)
-
-        for index in indexes:
-            if index.isValid():
-                pixmap = QtGui.QPixmap(self.data(index, Qt.ItemDataRole.UserRole))
-                stream << pixmap
-
-        mimeData.setData('image/x-tile-piece', encodedData)
-        return mimeData
-
-
-    def rowCount(self, parent):
-        if parent.isValid():
-            return 0
-        else:
-            return len(self.pixmaps)
-
-    def supportedDragActions(self):
-        return Qt.DropAction.CopyAction | Qt.DropAction.MoveAction
-
-
 
 #############################################################################################
 ################## Python-based RGB5a3 Decoding code from my BRFNT program ##################
@@ -1779,15 +269,14 @@ def RGB4A3Encode(tex):
 #############################################################################################
 ############ Main Window Class. Takes care of menu functions and widget creation ############
 
+from PiecesModel import PiecesModel
+from TileOverlord import TileOverlord
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super(MainWindow, self).__init__(parent)
 
         self.alpha = True
-
-        global Tileset
-        Tileset = TilesetClass()
 
         self.name = ''
 
@@ -1808,25 +297,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self.model.clear()
 
         if self.alpha == True:
-            for tile in Tileset.tiles:
+            for tile in PuzzleApplication.instance().tileset().tiles:
                 self.model.addPieces(tile.image)
         else:
-            for tile in Tileset.tiles:
+            for tile in PuzzleApplication.instance().tileset().tiles:
                 self.model.addPieces(tile.noalpha)
 
 
     def newTileset(self):
         '''Creates a new, blank tileset'''
 
-        global Tileset
-        Tileset.clear()
-        Tileset = TilesetClass()
+        PuzzleApplication.instance().tileset().clear()
+        PuzzleApplication.instance().setTileset(TilesetClass())
 
         EmptyPix = QtGui.QPixmap(24, 24)
         EmptyPix.fill(Qt.GlobalColor.black)
 
         for i in range(256):
-            Tileset.addTile(EmptyPix, EmptyPix)
+            PuzzleApplication.instance().tileset().addTile(EmptyPix, EmptyPix)
 
         self.setuptile()
         self.setWindowTitle('New Tileset')
@@ -1845,7 +333,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def openTilesetFromPath(self, path):
         '''Opens a Nintendo tileset arc and parses the heck out of it.'''
         self.setWindowTitle(os.path.basename(path))
-        Tileset.clear()
+        PuzzleApplication.instance().tileset().clear()
 
         name = path[str(path).rfind('/')+1:-4]
 
@@ -1872,7 +360,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif key.startswith('BG_unt/') and key.endswith('.bin'):
                 objstrings = arc[key]
             else:
-                Tileset.unknownFiles[key] = arc[key]
+                PuzzleApplication.instance().tileset().unknownFiles[key] = arc[key]
 
 
         if (Image is None) or (behaviourdata is None) or (objstrings is None) or (metadata is None):
@@ -1884,13 +372,13 @@ class MainWindow(QtWidgets.QMainWindow):
             tiledata = nsmblib.decompress11LZS(Image)
             if hasattr(nsmblib, 'decodeTilesetNoPremultiplication'):
                 argbdata = nsmblib.decodeTilesetNoPremultiplication(tiledata)
-                dest = QtGui.QImage(argbdata, 1024, 256, 4096, QtGui.QImage.Format_ARGB32)
+                dest = QtGui.QImage(argbdata, 1024, 256, 4096, QtGui.QImage.Format.Format_ARGB32)
             else:
                 dest = RGB4A3Decode(tiledata)
 
             if hasattr(nsmblib, 'decodeTilesetNoPremultiplicationNoAlpha'):
                 rgbdata = nsmblib.decodeTilesetNoPremultiplicationNoAlpha(tiledata)
-                noalphadest = QtGui.QImage(rgbdata, 1024, 256, 4096, QtGui.QImage.Format_ARGB32)
+                noalphadest = QtGui.QImage(rgbdata, 1024, 256, 4096, QtGui.QImage.Format.Format_ARGB32)
             else:
                 noalphadest = RGB4A3Decode(tiledata, False)
         else:
@@ -1913,7 +401,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Xoffset = 4
         Yoffset = 4
         for i in range(256):
-            Tileset.addTile(tileImage.copy(Xoffset,Yoffset,24,24), noalpha.copy(Xoffset,Yoffset,24,24), behaviours[i])
+            PuzzleApplication.instance().tileset().addTile(tileImage.copy(Xoffset,Yoffset,24,24), noalpha.copy(Xoffset,Yoffset,24,24), behaviours[i])
             Xoffset += 32
             if Xoffset >= 1024:
                 Xoffset = 4
@@ -1973,20 +461,20 @@ class MainWindow(QtWidgets.QMainWindow):
                     pop = tilelist.pop()
                     tilelist.insert(0, pop)
 
-            Tileset.addObject(entry[2], entry[1], upperslope, lowerslope, tilelist)
+            PuzzleApplication.instance().tileset().addObject(entry[2], entry[1], upperslope, lowerslope, tilelist)
 
             tilelist = [[]]
             upperslope = [0, 0]
             lowerslope = [0, 0]
 
-        if Tileset.objects:
-            Tileset.slot = Tileset.objects[0].tiles[0][0][2] & 3
+        if PuzzleApplication.instance().tileset().objects:
+            PuzzleApplication.instance().tileset().slot = PuzzleApplication.instance().tileset().objects[0].tiles[0][0][2] & 3
         else:
-            Tileset.slot = 1
-        self.tileWidget.tilesetType.setText('Pa{0}'.format(Tileset.slot))
+            PuzzleApplication.instance().tileset().slot = 1
+        self.tileWidget.tilesetType.setText('Pa{0}'.format(PuzzleApplication.instance().tileset().slot))
 
         self.setuptile()
-        SetupObjectModel(self.objmodel, Tileset.objects, Tileset.tiles)
+        SetupObjectModel(self.objmodel, PuzzleApplication.instance().tileset().objects, PuzzleApplication.instance().tileset().tiles)
 
         self.name = path
 
@@ -2024,8 +512,8 @@ class MainWindow(QtWidgets.QMainWindow):
         x = 0
         y = 0
         for i in range(256):
-            Tileset.tiles[i].image = tileImage.copy(x*24,y*24,24,24)
-            Tileset.tiles[i].noalpha = noalphaImage.copy(x*24,y*24,24,24)
+            PuzzleApplication.instance().tileset().tiles[i].image = tileImage.copy(x*24,y*24,24,24)
+            PuzzleApplication.instance().tileset().tiles[i].noalpha = noalphaImage.copy(x*24,y*24,24,24)
             x += 1
             if (x * 24) >= 384:
                 y += 1
@@ -2046,7 +534,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Xoffset = 0
         Yoffset = 0
 
-        for tile in Tileset.tiles:
+        for tile in PuzzleApplication.instance().tileset().tiles:
             painter.drawPixmap(Xoffset, Yoffset, tile.image)
             Xoffset += 24
             if Xoffset >= 384:
@@ -2120,7 +608,7 @@ class MainWindow(QtWidgets.QMainWindow):
         arcFiles['BG_unt/{0}.bin'.format(name)] = objectBuffer
         arcFiles['BG_unt/{0}_hd.bin'.format(name)] = objectMetaBuffer
 
-        arcFiles.update(Tileset.unknownFiles)
+        arcFiles.update(PuzzleApplication.instance().tileset().unknownFiles)
 
         arc = archive.U8()
         for name in sorted(arcFiles):
@@ -2130,15 +618,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def PackTexture(self):
 
-        tex = QtGui.QImage(1024, 256, QtGui.QImage.Format_ARGB32)
+        tex = QtGui.QImage(1024, 256, QtGui.QImage.Format.Format_ARGB32)
         tex.fill(Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(tex)
 
         Xoffset = 0
         Yoffset = 0
 
-        for tile in Tileset.tiles:
-            minitex = QtGui.QImage(32, 32, QtGui.QImage.Format_ARGB32)
+        for tile in PuzzleApplication.instance().tileset().tiles:
+            minitex = QtGui.QImage(32, 32, QtGui.QImage.Format.Format_ARGB32)
             minitex.fill(Qt.GlobalColor.transparent)
             minipainter = QtGui.QPainter(minitex)
 
@@ -2259,7 +747,7 @@ class MainWindow(QtWidgets.QMainWindow):
         offset = 0
         tilespack = struct.Struct('>8B')
         Tilebuffer = create_string_buffer(2048)
-        for tile in Tileset.tiles:
+        for tile in PuzzleApplication.instance().tileset().tiles:
             tilespack.pack_into(Tilebuffer, offset, tile.byte0, tile.byte1, tile.byte2, tile.byte3, tile.byte4, tile.byte5, tile.byte6, tile.byte7)
             offset += 8
 
@@ -2270,7 +758,7 @@ class MainWindow(QtWidgets.QMainWindow):
         objectStrings = []
 
         o = 0
-        for object in Tileset.objects:
+        for object in PuzzleApplication.instance().tileset().objects:
 
 
             # Slopes
@@ -2347,7 +835,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Metabuffer = b''
         i = 0
         for a in objectStrings:
-            Metabuffer = Metabuffer + struct.pack('>H2B', len(Objbuffer), Tileset.objects[i].width, Tileset.objects[i].height)
+            Metabuffer = Metabuffer + struct.pack('>H2B', len(Objbuffer), PuzzleApplication.instance().tileset().objects[i].width, PuzzleApplication.instance().tileset().objects[i].height)
             Objbuffer = Objbuffer + a
 
             i += 1
@@ -2390,22 +878,22 @@ class MainWindow(QtWidgets.QMainWindow):
         items = ("Pa0", "Pa1", "Pa2", "Pa3")
 
         item, ok = QtWidgets.QInputDialog.getItem(self, "Set Tileset Slot",
-                "Warning: \n    Setting the tileset slot will override any \n    tiles set to draw from other tilesets.\n\nCurrent slot is Pa%d" % Tileset.slot, items, 0, False)
+                "Warning: \n    Setting the tileset slot will override any \n    tiles set to draw from other tilesets.\n\nCurrent slot is Pa%d" % PuzzleApplication.instance().tileset().slot, items, 0, False)
         if ok and item:
-            Tileset.slot = int(item[2])
+            PuzzleApplication.instance().tileset().slot = int(item[2])
             self.tileWidget.tilesetType.setText(item)
 
 
             cobj = 0
             crow = 0
             ctile = 0
-            for object in Tileset.objects:
+            for object in PuzzleApplication.instance().tileset().objects:
                 for row in object.tiles:
                     for tile in row:
                         if tile != (0,0,0):
-                            Tileset.objects[cobj].tiles[crow][ctile] = (tile[0], tile[1], (tile[2] & 0xFC) | int(str(item[2])))
+                            PuzzleApplication.instance().tileset().objects[cobj].tiles[crow][ctile] = (tile[0], tile[1], (tile[2] & 0xFC) | int(str(item[2])))
                         if tile == (0,0,0) and ctile == 0:
-                            Tileset.objects[cobj].tiles[crow][ctile] = (tile[0], tile[1], (tile[2] & 0xFC) | int(str(item[2])))
+                            PuzzleApplication.instance().tileset().objects[cobj].tiles[crow][ctile] = (tile[0], tile[1], (tile[2] & 0xFC) | int(str(item[2])))
                         ctile += 1
                     crow += 1
                     ctile = 0
@@ -2426,9 +914,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def clearObjects(self):
         '''Clears the object data'''
 
-        Tileset.objects = []
+        PuzzleApplication.instance().tileset().objects = []
 
-        SetupObjectModel(self.objmodel, Tileset.objects, Tileset.tiles)
+        SetupObjectModel(self.objmodel, PuzzleApplication.instance().tileset().objects, PuzzleApplication.instance().tileset().tiles)
 
         self.objectList.update()
         self.tileWidget.update()
@@ -2437,7 +925,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def clearCollisions(self):
         '''Clears the collisions data'''
 
-        for tile in Tileset.tiles:
+        for tile in PuzzleApplication.instance().tileset().tiles:
             tile.byte0 = 0
             tile.byte1 = 0
             tile.byte2 = 0
@@ -2456,7 +944,7 @@ class MainWindow(QtWidgets.QMainWindow):
         frameLayout = QtWidgets.QGridLayout(frame)
 
         # Displays the tiles
-        self.tileDisplay = displayWidget()
+        self.tileDisplay = displayWidget(self, self)
 
         # Info Box for tile information
         self.infoDisplay = InfoBoxWidget(self)
@@ -2466,14 +954,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tileDisplay.setModel(self.model)
 
         # Object List
-        self.objectList = objectList()
+        self.objectList = ObjectList()
         self.objmodel = QtGui.QStandardItemModel()
-        SetupObjectModel(self.objmodel, Tileset.objects, Tileset.tiles)
+        SetupObjectModel(self.objmodel, PuzzleApplication.instance().tileset().objects, PuzzleApplication.instance().tileset().tiles)
         self.objectList.setModel(self.objmodel)
 
         # Creates the Tab Widget for behaviours and objects
         self.tabWidget = QtWidgets.QTabWidget()
-        self.tileWidget = tileOverlord()
+        self.tileWidget = TileOverlord()
         self.paletteWidget = PaletteWidget(self)
 
         # Second Tab
@@ -2502,7 +990,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def updateInfo(self, x, y):
 
         index = [self.tileDisplay.indexAt(QtCore.QPoint(x, y))]
-        curTile = Tileset.tiles[index[0].row()]
+        curTile = PuzzleApplication.instance().tileset().tiles[index[0].row()]
         info = self.infoDisplay
         palette = self.paletteWidget
 
@@ -2590,7 +1078,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.tabWidget.currentIndex() == 1:
             return
 
-        curTile = Tileset.tiles[index.row()]
+        curTile = PuzzleApplication.instance().tileset().tiles[index.row()]
         palette = self.paletteWidget
 
         if palette.coreWidgets[8].isChecked() == 1 or palette.propertyWidgets[0].isChecked() == 1:
@@ -2653,7 +1141,7 @@ if __name__ == '__main__':
 
     import sys
 
-    app = QtWidgets.QApplication(sys.argv)
+    app = PuzzleApplication(sys.argv)
 
     # go to the script path
     path = module_path()
@@ -2661,6 +1149,8 @@ if __name__ == '__main__':
         os.chdir(path)
 
     window = MainWindow()
+
+    app.window = window
     if len(sys.argv) > 1:
         window.openTilesetFromPath(sys.argv[1])
     window.show()
